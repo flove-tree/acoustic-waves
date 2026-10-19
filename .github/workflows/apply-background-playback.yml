@@ -1,0 +1,51 @@
+name: Apply verified background playback fix
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/apply-background-playback.yml]
+permissions:
+  contents: write
+concurrency:
+  group: apply-background-playback
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Apply exact verified HTML changes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+          path = Path("acoustic_waves_audio_file_review.html")
+          raw = path.read_bytes()
+          expected_before = "5b9a90714a8c1264230a08551e24979bfe1822dbd85cb1b47c72fd35e665f862"
+          expected_after = "a718ccc2b77b53d7f4a9db9f976245d2eba9e367898feed89b2d8322e0573d2d"
+          if hashlib.sha256(raw).hexdigest() != expected_after:
+              if hashlib.sha256(raw).hexdigest() != expected_before:
+                  raise SystemExit("Source changed; refusing to overwrite.")
+              text = raw.decode("utf-8")
+              edits = json.loads(r'''[[14278,14304,"면 자동 연주가 정지됩니다. 다른 브라우저 탭이나 창으로 이동해도 음악은 계속 재생"],[16080,16080,"다른 브라우저 탭이나 창으로 이동해도 원음 재생은 유지됩니다.<br>"],[27540,27540,"const context=Tone.getContext();context.clockSource='worker';context.lookAhead=.25;context.updateInterval=.025;"],[34409,34678,"// Background playback: visibility changes do not mute or release instruments."],[38250,38286,"// Completion uses the audio context clock, never the animation-frame clock.\nlet playbackEndRun=-1;\nfunction schedulePlaybackEnd(time,isCanon=false){\n  const run=music.run;\n  if(playbackEndRun===run)return;\n  playbackEndRun=run;\n  const context=Tone.getContext();\n  context.setTimeout(()=>{\n    if(run!==music.run||music.state!=='playing')return;\n    stopAuto(false);\n    $('musicStatus').textContent=isCanon?'캐논 전곡 57마디 연주 완료 · 마지막 쉼까지 재생했습니다.':'한 번의 연주가 끝났습니다.';\n    if(isCanon){$('musicProgressBar').style.width='100%';$('noteDisplay').textContent='캐논 전곡 · 연주 완료';}\n  },Math.max(0,time-context.immediate()));\n}\nfunction updateNoteLater(text,time){if(document.hidden)return;"],[38785,38915,"schedulePlaybackEnd("],[43320,43429,"// Transport keeps running while this browser tab is hidden."],[92364,93522,"if(document.hidden)return;const run=music.run,tick=fullCanon.tick,notes=fullCanon.activeNotes.map(e=>e?[...e]:null),progress=tick/CANON_FULL_DATA.totalTicks;Tone.Draw.schedule(()=>{if(run!==music.run||music.state!=='playing')return;const bar=Math.min(57,Math.floor(tick/32)+1),beat=Math.floor(tick%32/8)+1;$('noteDisplay').textContent='캐논 전곡 · '+bar+'/57마디 · '+beat+'박';$('musicProgressBar').style.width=Math.min(100,progress*100)+'%';for(let i=0;i<4;i++){const part=CANON_FULL_DATA.parts[i],e=notes[i];$('canonNote_'+part.id).textContent=part.label+' · '+(!settings.canonEnabled[part.id]?'음소거':e&&tick<e[0]+e[2]?midiLabel(e[1]):tick<part.startBeat*8?'진입 대기':'쉼');}},time);}\nfunction onCanonTick(time){if(music.state!=='playing'||!audio.enabled||audio.loading||!fullCanon.ready||fullCanon.ending)return;if(fullCanon.tick>=CANON_FULL_DATA.totalTicks){if(settings.autoLoop){clearCanonProgress();releaseCanon(time); }else{fullCanon.ending=true;schedulePlaybackEnd(time,tru"],[97314,97314,"||document.hidden"],[104580,104704,"// Natural silence remains reserved for explicit pause, stop and mode changes."],[120442,120552,"// Uploaded audio keeps playing across browser-tab switches."],[120670,120670,"\n// Drop stale visual work only; never change playback state or gain here.\ndocument.addEventListener('visibilitychange',()=>{\n  if(window.Tone)Tone.Draw.cancel(0);\n  soundReactive.pulses=[];\n  soundReactive.lastMs=0;\n  motion.speed=0;\n  motion.wave=0;\n  if(!document.hidden){\n    if(window.Tone){audio.lastPlay=Tone.now();audio.lastHarmony=Tone.now();}\n    if(filePlayer.mode==='file'){resetSpectrum(false);fileControls();}\n  }\n});\n"]]''')
+              for start, end, replacement in reversed(edits):
+                  text = text[:start] + replacement + text[end:]
+              result = text.encode("utf-8")
+              if hashlib.sha256(result).hexdigest() != expected_after:
+                  raise SystemExit("Output differs from the user-tested HTML; refusing to write.")
+              path.write_bytes(result)
+          print("Verified user-tested HTML SHA-256:", expected_after)
+          PY
+      - name: Commit only the verified HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- acoustic_waves_audio_file_review.html; then
+            exit 0
+          fi
+          git add -- acoustic_waves_audio_file_review.html
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Keep Acoustic Waves audio playing in background tabs'
+          git push origin HEAD:main
