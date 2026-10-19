@@ -91,7 +91,7 @@ body{background:radial-gradient(ellipse at 25% 25%,#556391 0%,transparent 65%),l
 <div class="buttons"><button id="autoStart">자동 연주 시작</button><button id="autoPause" disabled>일시정지</button><button id="autoStop" disabled>정지</button></div>
 <div id="noteDisplay" aria-live="off">연주를 시작하면 음 이름이 표시됩니다.</div><div id="musicProgress" aria-hidden="true"><span id="musicProgressBar"></span></div>
 <div id="musicStatus" role="status" aria-live="polite">고요한 즉흥 연주 · 직접 만든 짧은 선율을 반복합니다.</div>
-<div class="autoInfo">캐논: 파헬벨 원곡의 도입 선율과 반복 베이스를 활용한 자체 간단편곡입니다. 원곡 전곡이나 3성부 악보를 재현하는 모드는 아닙니다.<br>자동 물결은 음악을 분석한 시각화가 아니라 별도의 부드러운 움직임입니다.<br>악기를 바꾸거나 탭을 숨기면 자동 연주가 멈추거나 일시정지됩니다.</div>
+<div class="autoInfo">캐논: 파헬벨 원곡의 도입 선율과 반복 베이스를 활용한 자체 간단편곡입니다. 원곡 전곡이나 3성부 악보를 재현하는 모드는 아닙니다.<br>자동 물결은 음악을 분석한 시각화가 아니라 별도의 부드러운 움직임입니다.<br>악기를 바꾸면 자동 연주가 정지됩니다. 다른 브라우저 탭이나 창으로 이동해도 음악은 계속 재생됩니다.</div>
 </div>
 
 </div>
@@ -110,7 +110,7 @@ body{background:radial-gradient(ellipse at 25% 25%,#556391 0%,transparent 65%),l
 <div class="row"><label for="fileLoop">반복 재생</label><input id="fileLoop" type="checkbox"></div>
 <div class="meter" aria-hidden="true"><span id="fileEnergy"></span></div>
 <div id="fileStatus" class="autoInfo" role="status" aria-live="polite">파일을 고르고 재생을 눌러 주세요. 지원 형식은 브라우저에 따라 다릅니다.</div>
-<div class="autoInfo">저음은 아래쪽, 고음은 위쪽에서 반응합니다. 보컬·화음·배음이 섞인 녹음은 주파수 성분을 분석해 표현하므로 정확한 계이름 표시를 하지 않습니다. 새 반응은 기존 수면 움직임에 더해집니다.<br>모드 전환 시 이전 연주는 정리되며 새 모드는 자동으로 시작하지 않습니다.</div>
+<div class="autoInfo">저음은 아래쪽, 고음은 위쪽에서 반응합니다. 보컬·화음·배음이 섞인 녹음은 주파수 성분을 분석해 표현하므로 정확한 계이름 표시를 하지 않습니다. 새 반응은 기존 수면 움직임에 더해집니다.<br>다른 브라우저 탭이나 창으로 이동해도 원음 재생은 유지됩니다.<br>모드 전환 시 이전 연주는 정리되며 새 모드는 자동으로 시작하지 않습니다.</div>
 </div></div>
 </section>
 <div id="error">WebGL을 사용할 수 없습니다.<br>브라우저의 하드웨어 가속을 확인해 주세요.</div>
@@ -163,7 +163,7 @@ async function fetchSample(path,preferred){let lastError;for(const root of [pref
 function normalizeSample(buffer){let peak=0,sum=0,count=0;for(let c=0;c<buffer.numberOfChannels;c++){const data=buffer.getChannelData(c);for(let i=0;i<data.length;i++){const v=data[i];peak=Math.max(peak,Math.abs(v));sum+=v*v;count++;}}if(!count||peak<.00001)return buffer;const rms=Math.sqrt(sum/count),gain=Math.min(5,Math.max(1,.14/Math.max(rms,.00001)),.92/peak);for(let c=0;c<buffer.numberOfChannels;c++){const data=buffer.getChannelData(c);for(let i=0;i<data.length;i++)data[i]*=gain;}return buffer;}
 
 async function createVoice(id){if(audio.cache.has(id))return audio.cache.get(id);const def=instruments[id];status(def.name+' · 공식 음높이 매핑 확인 중…');const {root,regions}=await mapping(def),selected=chooseSamples(regions,def),buffers={};let completed=0;await Promise.all(selected.map(async r=>{const data=await fetchSample(r.sample,root),buffer=await Tone.getContext().rawContext.decodeAudioData(data);buffers[String(r.key)]=normalizeSample(buffer);completed++;status(def.name+' · 녹음 파일 '+completed+'/'+selected.length+' 로딩 중…');}));const gain=new Tone.Gain(0),sampler=new Tone.Sampler({urls:buffers,attack:def.attack,release:def.release,curve:'exponential',volume:def.level});sampler.connect(gain);gain.connect(audio.filter);const voice={id,def,sampler,gain,buffers};audio.cache.set(id,voice);return voice;}
-async function setupAudio(){await loadTone();await Tone.start();if(audio.ready)return;if(!audio.master){audio.master=new Tone.Gain(0).toDestination();const limiter=new Tone.Limiter(-2);limiter.connect(audio.master);const compressor=new Tone.Compressor({threshold:-12,ratio:2,knee:12,attack:.02,release:.3});audio.boost=new Tone.Gain(settings.boost);compressor.connect(audio.boost);audio.boost.connect(limiter);audio.reverb=new Tone.Reverb({decay:2.6,preDelay:.025,wet:.23});audio.reverb.connect(compressor);audio.panner=new Tone.Panner(0);audio.panner.connect(audio.reverb);audio.filter=new Tone.Filter(4000,'lowpass');audio.filter.connect(audio.panner);}await audio.reverb.generate();audio.ready=true;}
+async function setupAudio(){await loadTone();const context=Tone.getContext();context.clockSource='worker';context.lookAhead=.25;context.updateInterval=.025;await Tone.start();if(audio.ready)return;if(!audio.master){audio.master=new Tone.Gain(0).toDestination();const limiter=new Tone.Limiter(-2);limiter.connect(audio.master);const compressor=new Tone.Compressor({threshold:-12,ratio:2,knee:12,attack:.02,release:.3});audio.boost=new Tone.Gain(settings.boost);compressor.connect(audio.boost);audio.boost.connect(limiter);audio.reverb=new Tone.Reverb({decay:2.6,preDelay:.025,wet:.23});audio.reverb.connect(compressor);audio.panner=new Tone.Panner(0);audio.panner.connect(audio.reverb);audio.filter=new Tone.Filter(4000,'lowpass');audio.filter.connect(audio.panner);}await audio.reverb.generate();audio.ready=true;}
 function controls(){for(const id of ['sound','instrument','companion','duet'])$(id).disabled=audio.loading;$('sound').textContent=audio.enabled?'소리 끄기':'소리 켜기';$('sound').classList.toggle('on',audio.enabled);$('preview').disabled=!audio.enabled||!audio.voices.length||audio.loading;refreshAuto();}
 function releaseVoices(time){for(const voice of audio.cache.values())voice.sampler.releaseAll(time);}
 function updateMix(){if(!window.Tone)return;for(const voice of audio.cache.values()){let gain=0;if(audio.voices[0]===voice)gain=settings.duet&&audio.voices.length>1?Math.sqrt(1-settings.balance):1;else if(audio.voices[1]===voice)gain=Math.sqrt(settings.balance);voice.gain.gain.rampTo(gain,.25);}}
@@ -180,7 +180,7 @@ function audioTick(){const raw=Math.min(1,(motion.wave*.78+Math.min(1,motion.spe
 const companion=audio.voices[1];if(companion){const spacing=companion.def.strings?1.65:Math.max(.8,companion.def.spacing*1.6);if(now-audio.lastHarmony>=spacing){const note=harmonyMidi(audio.lastMidi,companion.def);playVoice(companion,note,now+.07,Math.min(.82,.48+audio.energy*.30),true);audio.lastHarmony=now;}}}
 setInterval(audioTick,65);
 $('preview').addEventListener('click',()=>{if(!audio.enabled||!audio.voices.length||audio.loading)return;stopAuto(false);releaseVoices();const main=audio.voices[0],notes=scale(main.def),now=Tone.now()+.1,hasStrings=audio.voices.some(v=>v.def.strings),gap=hasStrings?1.25:.85;for(let i=0;i<3;i++){const note=notes[Math.min(notes.length-1,1+i*2)];playVoice(main,note,now+i*gap,.72);if(audio.voices[1])playVoice(audio.voices[1],harmonyMidi(note,audio.voices[1].def),now+i*gap+.035,.62,true);}audio.lastPlay=now+3*gap;audio.lastHarmony=now+3*gap;status(audio.voices.map(v=>v.def.name).join(' + ')+' · 미리듣기 중');setTimeout(()=>{if(audio.enabled&&!audio.loading)status('물결을 움직여 연주하세요.');},(gap*3+1)*1000);});
-document.addEventListener('visibilitychange',()=>{if(!audio.master)return;if(document.hidden){audio.master.gain.rampTo(0,.65);releaseVoices();}else if(audio.enabled){audio.master.gain.rampTo(outputTarget(),.4);audio.lastPlay=Tone.now();audio.lastHarmony=Tone.now();}});
+// Background playback: visibility changes do not mute or release instruments.
 
 
 // Tone.Transport schedules music independently of animation frames.
@@ -198,9 +198,23 @@ function canonBassMidi(note,id){const low=id==='violin'?55:id==='viola'?48:36;le
 function midiLabel(n){if(n===null)return '쉼';const names=['도','도♯','레','레♯','미','파','파♯','솔','솔♯','라','라♯','시'],english=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];return names[n%12]+(Math.floor(n/12)-1)+' · '+english[n%12]+(Math.floor(n/12)-1);}
 function autoPlay(voice,n,time,seconds,velocity){if(!voice||!Number.isFinite(n))return null;const actual=fitAutoMidi(n,voice.id);const duration=Math.max(.09,Math.min(seconds*.86,voice.def.strings?3.5:2.3));voice.sampler.triggerAttackRelease(Tone.Frequency(actual,'midi').toNote(),duration,time,Math.max(.15,Math.min(.9,velocity)));return actual;}
 function refreshAuto(){const busy=audio.loading;$('autoStart').disabled=busy||music.state==='playing';$('autoStart').textContent=music.state==='paused'?'이어서 연주':'자동 연주 시작';$('autoPause').disabled=busy||music.state!=='playing';$('autoStop').disabled=busy||music.state==='stopped';}
-function updateNoteLater(text,time){const run=music.run;Tone.Draw.schedule(()=>{if(run!==music.run||music.state!=='playing')return;$('noteDisplay').textContent=text;$('musicProgressBar').style.width=Math.min(100,music.completed/Math.max(1,music.totalTicks)*100)+'%';},time);}
+// Completion uses the audio context clock, never the animation-frame clock.
+let playbackEndRun=-1;
+function schedulePlaybackEnd(time,isCanon=false){
+  const run=music.run;
+  if(playbackEndRun===run)return;
+  playbackEndRun=run;
+  const context=Tone.getContext();
+  context.setTimeout(()=>{
+    if(run!==music.run||music.state!=='playing')return;
+    stopAuto(false);
+    $('musicStatus').textContent=isCanon?'캐논 전곡 57마디 연주 완료 · 마지막 쉼까지 재생했습니다.':'한 번의 연주가 끝났습니다.';
+    if(isCanon){$('musicProgressBar').style.width='100%';$('noteDisplay').textContent='캐논 전곡 · 연주 완료';}
+  },Math.max(0,time-context.immediate()));
+}
+function updateNoteLater(text,time){if(document.hidden)return;const run=music.run;Tone.Draw.schedule(()=>{if(run!==music.run||music.state!=='playing')return;$('noteDisplay').textContent=text;$('musicProgressBar').style.width=Math.min(100,music.completed/Math.max(1,music.totalTicks)*100)+'%';},time);}
 function onMusicTick(time){if(music.state!=='playing'||!audio.enabled||audio.loading||!audio.voices.length)return;const mode=settings.autoMode,secondsPerBeat=60/settings.bpm;
-if(music.remaining===0){if(music.index>=music.events.length){if(!settings.autoLoop){const run=music.run;Tone.Draw.schedule(()=>{if(run===music.run){stopAuto(false);$('musicStatus').textContent='한 번의 연주가 끝났습니다.';}},time);return;}music.index=0;music.completed=0;}
+if(music.remaining===0){if(music.index>=music.events.length){if(!settings.autoLoop){schedulePlaybackEnd(time);return;}music.index=0;music.completed=0;}
  const event=music.events[music.index++];music.remaining=Math.round(event.beats*4);let display='쉼 · '+event.beats+'박';if(event.midi!==null){music.lastMidi=event.midi;const actual=autoPlay(audio.voices[0],event.midi,time,event.beats*secondsPerBeat,(mode==='calm'?.55:.65)*settings.autoLevel);display=midiLabel(actual)+' · '+event.beats+'박';}updateNoteLater(display,time);
 }
 if(audio.voices[1]&&music.tick%8===0){const companion=audio.voices[1];if(mode==='canon'){const index=Math.floor(music.tick/8)%8;autoPlay(companion,canonBassMidi(canonBass[index],companion.id),time+.012,2*secondsPerBeat,.48*settings.autoLevel);if(!companion.def.strings)autoPlay(companion,canonBassMidi(canonChords[index][1],companion.id),time+secondsPerBeat*.5,secondsPerBeat,.32*settings.autoLevel);}else if(mode==='custom'){autoPlay(companion,harmonyMidi(music.lastMidi,companion.def),time+.012,2*secondsPerBeat,.40*settings.autoLevel);}else{const chord=calmChords[Math.floor(music.tick/32)%4];autoPlay(companion,scoreMidi(chord[0]),time+.012,2*secondsPerBeat,.43*settings.autoLevel);}}
@@ -215,7 +229,7 @@ $('autoLevel').value=settings.autoLevel;$('autoLevel').addEventListener('input',
 $('applyScore').addEventListener('click',()=>{try{const events=parseScore($('customScore').value);settings.customScore=$('customScore').value;save();stopAuto(false);$('musicStatus').textContent=events.length+'개 음표·쉼표 확인 완료. 자동 연주 시작을 눌러 주세요.';}catch(e){$('musicStatus').textContent=e.message;}});
 $('customScore').addEventListener('change',()=>{settings.customScore=$('customScore').value;save();});
 $('autoStart').addEventListener('click',startAuto);$('autoPause').addEventListener('click',pauseAuto);$('autoStop').addEventListener('click',()=>stopAuto());
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&music.state==='playing')pauseAuto();});
+// Transport keeps running while this browser tab is hidden.
 $('musicStatus').textContent=modeDescriptions[settings.autoMode];refreshAuto();
 
 // 연속 수면 시뮬레이션: 커서 점이나 간격을 둔 파문을 그리지 않습니다.
@@ -313,8 +327,8 @@ function mixCanon(){for(const [id,bank]of fullCanon.banks){const running=setting
 function clearCanonProgress(){fullCanon.tick=0;fullCanon.cursors=[0,0,0,0];fullCanon.activeNotes=[null,null,null,null];fullCanon.ending=false;for(const part of CANON_FULL_DATA.parts)$('canonNote_'+part.id).textContent=part.label+' · 대기';}
 async function prepareCanon(){if(fullCanon.ready)return;const sustain=await createVoice('canonViolin');const short=await createVoice('canonViolinShort');const cello=await createVoice('canonCello');for(let i=0;i<4;i++){const part=CANON_FULL_DATA.parts[i],gain=new Tone.Gain(0),pan=new Tone.Panner([-.42,0,.42,0][i]);gain.connect(pan);pan.connect(audio.filter);const base=i<3?sustain:cello;const sampler=new Tone.Sampler({urls:base.buffers,attack:i<3?.025:.025,release:i<3?.11:.14,curve:'exponential',volume:2});sampler.connect(gain);let shortSampler=null;if(i<3){shortSampler=new Tone.Sampler({urls:short.buffers,attack:.004,release:.045,curve:'exponential',volume:2});shortSampler.connect(gain);}fullCanon.banks.set(part.id,{sustain:sampler,short:shortSampler,gain,pan});}fullCanon.ready=true;}
 function playCanonEvent(part,event,time){const bank=fullCanon.banks.get(part.id);if(!bank||!settings.canonEnabled[part.id])return;const [tick,note,duration,staccato]=event,secondsPerBeat=60/settings.bpm;const short=part.id!=='bass'&&(duration<=4||staccato);const sampler=short?bank.short:bank.sustain;const gate=staccato?.55:(short?.80:.94);const hold=Math.max(.025,duration/8*secondsPerBeat*gate);const velocity=(part.id==='bass'?.56:.60)*settings.autoLevel;sampler.triggerAttackRelease(Tone.Frequency(note,'midi').toNote(),hold,time,velocity);}
-function drawCanon(time){const run=music.run,tick=fullCanon.tick,notes=fullCanon.activeNotes.map(e=>e?[...e]:null),progress=tick/CANON_FULL_DATA.totalTicks;Tone.Draw.schedule(()=>{if(run!==music.run||music.state!=='playing')return;const bar=Math.min(57,Math.floor(tick/32)+1),beat=Math.floor(tick%32/8)+1;$('noteDisplay').textContent='캐논 전곡 · '+bar+'/57마디 · '+beat+'박';$('musicProgressBar').style.width=Math.min(100,progress*100)+'%';for(let i=0;i<4;i++){const part=CANON_FULL_DATA.parts[i],e=notes[i];$('canonNote_'+part.id).textContent=part.label+' · '+(!settings.canonEnabled[part.id]?'음소거':e&&tick<e[0]+e[2]?midiLabel(e[1]):tick<part.startBeat*8?'진입 대기':'쉼');}},time);}
-function onCanonTick(time){if(music.state!=='playing'||!audio.enabled||audio.loading||!fullCanon.ready||fullCanon.ending)return;if(fullCanon.tick>=CANON_FULL_DATA.totalTicks){if(settings.autoLoop){clearCanonProgress();releaseCanon(time); }else{fullCanon.ending=true;const run=music.run;Tone.Draw.schedule(()=>{if(run!==music.run)return;stopAuto(false);$('musicStatus').textContent='캐논 전곡 57마디 연주 완료 · 마지막 쉼까지 재생했습니다.';$('musicProgressBar').style.width='100%';$('noteDisplay').textContent='캐논 전곡 · 연주 완료';},time);return;}}
+function drawCanon(time){if(document.hidden)return;const run=music.run,tick=fullCanon.tick,notes=fullCanon.activeNotes.map(e=>e?[...e]:null),progress=tick/CANON_FULL_DATA.totalTicks;Tone.Draw.schedule(()=>{if(run!==music.run||music.state!=='playing')return;const bar=Math.min(57,Math.floor(tick/32)+1),beat=Math.floor(tick%32/8)+1;$('noteDisplay').textContent='캐논 전곡 · '+bar+'/57마디 · '+beat+'박';$('musicProgressBar').style.width=Math.min(100,progress*100)+'%';for(let i=0;i<4;i++){const part=CANON_FULL_DATA.parts[i],e=notes[i];$('canonNote_'+part.id).textContent=part.label+' · '+(!settings.canonEnabled[part.id]?'음소거':e&&tick<e[0]+e[2]?midiLabel(e[1]):tick<part.startBeat*8?'진입 대기':'쉼');}},time);}
+function onCanonTick(time){if(music.state!=='playing'||!audio.enabled||audio.loading||!fullCanon.ready||fullCanon.ending)return;if(fullCanon.tick>=CANON_FULL_DATA.totalTicks){if(settings.autoLoop){clearCanonProgress();releaseCanon(time); }else{fullCanon.ending=true;schedulePlaybackEnd(time,true);return;}}
 for(let i=0;i<4;i++){const part=CANON_FULL_DATA.parts[i];while(fullCanon.cursors[i]<part.events.length&&part.events[fullCanon.cursors[i]][0]<=fullCanon.tick){const event=part.events[fullCanon.cursors[i]++];if(event[0]===fullCanon.tick){playCanonEvent(part,event,time);fullCanon.activeNotes[i]=event;}}}
 if(!settings.autoPan)audio.panner.pan.rampTo(0,.15);drawCanon(time);fullCanon.tick++;music.tick=fullCanon.tick;music.completed=fullCanon.tick;}
 const baseReleaseVoices=releaseVoices;releaseVoices=function(time){baseReleaseVoices(time);releaseCanon(time);};
@@ -335,7 +349,7 @@ canonPanel();if(settings.autoMode==='canonFull')$('musicStatus').textContent=mod
 // Performance lock and audio-driven display deformation. Score and simulation are unchanged.
 function addAudioSensor(id,gain){if(soundReactive.sensors.has(id))return soundReactive.sensors.get(id);const analyser=new Tone.Analyser('waveform',256);gain.connect(analyser);const sensor={id,analyser,gain,lastMidi:60,role:'manual',x:.5,y:.5};soundReactive.sensors.set(id,sensor);return sensor;}
 function sensorForVoice(voice){return addAudioSensor('voice:'+voice.id,voice.gain);}
-function capturePlayedNote(sensor,note,time,role,x,y,velocity=.65){if(!sensor)return;const run=music.run;Tone.Draw.schedule(()=>{if(role==='auto'&&(run!==music.run||music.state!=='playing'))return;const position=notePosition(note,sensor.id);x=position.x;y=position.y;sensor.lastMidi=note;sensor.role=role;sensor.x=x;sensor.y=y;if(!performanceState.hold&&settings.reactiveEnabled&&audio.enabled){soundReactive.pulses.push({source:sensor.id,note,time,x,y,velocity:Math.max(0,Math.min(1,velocity))});soundReactive.lastPlayed=midiLabel(note);const readout=$('reactiveReadout');if(readout)readout.textContent='지금 연주: '+soundReactive.lastPlayed;}},time);}
+function capturePlayedNote(sensor,note,time,role,x,y,velocity=.65){if(!sensor||document.hidden)return;const run=music.run;Tone.Draw.schedule(()=>{if(role==='auto'&&(run!==music.run||music.state!=='playing'))return;const position=notePosition(note,sensor.id);x=position.x;y=position.y;sensor.lastMidi=note;sensor.role=role;sensor.x=x;sensor.y=y;if(!performanceState.hold&&settings.reactiveEnabled&&audio.enabled){soundReactive.pulses.push({source:sensor.id,note,time,x,y,velocity:Math.max(0,Math.min(1,velocity))});soundReactive.lastPlayed=midiLabel(note);const readout=$('reactiveReadout');if(readout)readout.textContent='지금 연주: '+soundReactive.lastPlayed;}},time);}
 const sensorCreateVoice=createVoice;createVoice=async function(id){const voice=await sensorCreateVoice(id);sensorForVoice(voice);return voice;};
 const sensorPrepareCanon=prepareCanon;prepareCanon=async function(){await sensorPrepareCanon();for(const [id,bank]of fullCanon.banks)addAudioSensor('canon:'+id,bank.gain);};
 const sensorPlayVoice=playVoice;playVoice=function(voice,note,when,velocity,companion=false){if(performanceState.hold&&!performanceState.starting)return;sensorPlayVoice(voice,note,when,velocity,companion);capturePlayedNote(sensorForVoice(voice),note,when,'manual',motion.x,motion.y,velocity);};
@@ -359,7 +373,7 @@ $('manualResume').addEventListener('click',async()=>{if(audio.loading||!audio.en
 $('sound').addEventListener('click',()=>{if(!audio.enabled&&!audio.loading)allowManual();},true);
 $('preview').addEventListener('click',()=>{if(!audio.enabled||audio.loading)return;performanceState.starting=true;performanceState.silencing=false;performanceState.hold=false;if(audio.master)audio.master.gain.rampTo(settings.volume,.15);queueMicrotask(()=>performanceState.starting=false);},true);
 for(const event of ['pointermove','pointerdown'])canvas.addEventListener(event,()=>{if(!performanceState.hold&&!performanceState.starting){performanceState.awaitFreshStroke=false;}},true);
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&music.state==='playing')beginNaturalSilence();},true);
+// Natural silence remains reserved for explicit pause, stop and mode changes.
 $('reactiveEnabled').checked=settings.reactiveEnabled;$('reactiveStrength').value=settings.reactiveStrength;$('reactiveEnabled').addEventListener('change',e=>{settings.reactiveEnabled=e.target.checked;save();});$('reactiveStrength').addEventListener('input',e=>{settings.reactiveStrength=Number(e.target.value);save();});
 
 </script>
@@ -414,8 +428,21 @@ $('fileReactive').addEventListener('change',e=>{$('reactiveEnabled').checked=e.t
 $('fileSeek').addEventListener('input',e=>{const duration=filePlayer.media.duration;if(Number.isFinite(duration)&&duration>0){filePlayer.media.currentTime=Math.max(0,Math.min(duration,Number(e.target.value)));resetSpectrum(true);fileControls();}});
 for(const event of ['loadedmetadata','durationchange','timeupdate'])filePlayer.media.addEventListener(event,fileControls);filePlayer.media.addEventListener('ended',()=>fadeFile('end'));filePlayer.media.addEventListener('error',()=>{filePlayer.playing=false;filePlayer.audible=false;filePlayer.pausing=false;fileMessage('선택한 파일을 재생할 수 없습니다. 이 브라우저가 지원하는 오디오 형식인지 확인해 주세요.');fileControls();});
 for(const event of ['pointermove','pointerdown'])canvas.addEventListener(event,e=>{if(filePlayer.mode==='file')e.stopImmediatePropagation();},true);
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&filePlayer.playing)fadeFile('pause');});window.addEventListener('beforeunload',()=>{if(filePlayer.url)URL.revokeObjectURL(filePlayer.url);});
+// Uploaded audio keeps playing across browser-tab switches.window.addEventListener('beforeunload',()=>{if(filePlayer.url)URL.revokeObjectURL(filePlayer.url);});
 fileControls();
+
+// Drop stale visual work only; never change playback state or gain here.
+document.addEventListener('visibilitychange',()=>{
+  if(window.Tone)Tone.Draw.cancel(0);
+  soundReactive.pulses=[];
+  soundReactive.lastMs=0;
+  motion.speed=0;
+  motion.wave=0;
+  if(!document.hidden){
+    if(window.Tone){audio.lastPlay=Tone.now();audio.lastHarmony=Tone.now();}
+    if(filePlayer.mode==='file'){resetSpectrum(false);fileControls();}
+  }
+});
 
 </script>
 </body>
